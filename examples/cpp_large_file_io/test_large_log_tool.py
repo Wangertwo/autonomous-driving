@@ -181,6 +181,28 @@ def test_buffered_scan_matches_original(tool: Path, buffered_tool: Path, tmp: Pa
             assert f"{topic} 250" in buffered.stdout
 
 
+def test_buffered_dump_topic_payloads(tool: Path, buffered_tool: Path, tmp: Path):
+    log = tmp / "dump.log"
+    output_dir = tmp / "dumped_camera"
+    run([tool, "generate", log, "12"])
+    records = read_records(log)
+
+    result = run([buffered_tool, "dump", log, "/camera/front", output_dir, "raw", "15"])
+    assert "dumped_payloads=3" in result.stdout
+
+    camera_records = [record for record in records if record["topic"] == "/camera/front"]
+    payload_files = sorted(output_dir.glob("payload_*.bin"))
+    assert len(payload_files) == len(camera_records)
+    assert [path.read_bytes() for path in payload_files] == [
+        record["payload"] for record in camera_records
+    ]
+
+    manifest_lines = (output_dir / "manifest.jsonl").read_text().splitlines()
+    assert len(manifest_lines) == len(camera_records)
+    assert "\"topic\":\"/camera/front\"" in manifest_lines[0]
+    assert "\"file\":\"payload_000000000000.bin\"" in manifest_lines[0]
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="large-log-tool-test-") as tmpdir:
         tmp = Path(tmpdir)
@@ -198,6 +220,8 @@ def main():
             print(f"PASS {test.__name__}")
         test_buffered_scan_matches_original(tool, buffered_tool, tmp)
         print("PASS test_buffered_scan_matches_original")
+        test_buffered_dump_topic_payloads(tool, buffered_tool, tmp)
+        print("PASS test_buffered_dump_topic_payloads")
 
 
 if __name__ == "__main__":
